@@ -1,4 +1,6 @@
- import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:avatar_glow/avatar_glow.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -16,8 +18,8 @@ void main() async {
   );
 
   windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.setAsFrameless(); // Ensures no OS borders
-    await windowManager.setHasShadow(false); // Removes the faint Windows rectangle
+    await windowManager.setAsFrameless();
+    await windowManager.setHasShadow(false);
     await windowManager.show();
     await windowManager.setAlignment(Alignment.bottomRight); 
   });
@@ -99,19 +101,61 @@ class _HoverBotUIState extends State<HoverBotUI> {
   void _stopListening() async {
     setState(() {
       _isListening = false;
-      _isProcessing = true; // Turns on the "answering/loading" light
+      _isProcessing = true;
       _displayText = "Sending to Gemma 4...";
     });
     await _speech.stop();
     
-    // Call Person 2's Python backend API here
-    // When the API replies, remember to set _isProcessing = false;
+    // -> THIS WAS MISSING: Actually triggers the FastAPI backend call!
+    await _scanLocalRepo();
+  }
+
+  Future<void> _scanLocalRepo() async {
+    final url = Uri.parse('http://127.0.0.1:8000/scan-repo');
+    
+    try {
+      final response = await http.post(
+        url,
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "repo_folder_path": "C:\\Users\\Dikshita\\Desktop\\Train Wreck\\test_folder" 
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        if (data['status'] == 'safe' || data['status'] == 'error') {
+          setState(() => _displayText = data['message']);
+        } else if (data['status'] == 'scan_complete') {
+          List reports = data['report'];
+          String finalOutput = "Scanned ${data['total_files_scanned']} files:\n\n";
+          
+          for (var item in reports) {
+            var analysis = item['ai_analysis'];
+            String action = (analysis['action'] ?? 'UNKNOWN').toString().toUpperCase();
+            String reason = analysis['reason'] ?? '';
+            
+            finalOutput += "📁 ${item['file']} ➔ [$action]\n";
+            if (reason.isNotEmpty) {
+              finalOutput += "Reason: $reason\n";
+            }
+            finalOutput += "\n";
+          }
+          setState(() => _displayText = finalOutput);
+        }
+      } else {
+        setState(() => _displayText = "Backend Error: ${response.statusCode}");
+      }
+    } catch (e) {
+      setState(() => _displayText = "Connection failed:\n$e");
+    } finally {
+      setState(() => _isProcessing = false); 
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // THE SMALL ICON UI
-    // THE SMALL ICON UI
     if (!_isExpanded) {
       bool isActive = _isListening || _isProcessing;
       Color ringColor = _isListening ? Colors.blueAccent : Colors.purpleAccent;
@@ -132,7 +176,6 @@ class _HoverBotUIState extends State<HoverBotUI> {
                   height: 70,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    // The glowing circumference border
                     border: Border.all(
                       color: isActive ? ringColor : Colors.transparent,
                       width: isActive ? 3.0 : 0.0,
