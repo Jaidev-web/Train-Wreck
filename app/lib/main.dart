@@ -133,8 +133,17 @@ class _HoverBotUIState extends State<HoverBotUI> {
           
           for (var item in reports) {
             var analysis = item['ai_analysis'];
-            String action = (analysis['action'] ?? 'UNKNOWN').toString().toUpperCase();
-            String reason = analysis['reason'] ?? '';
+            String action = "UNKNOWN";
+            String reason = "";
+            
+            // Safely check if analysis is a Map or a fallback String
+            if (analysis is Map) {
+              action = (analysis['action'] ?? 'UNKNOWN').toString().toUpperCase();
+              reason = analysis['reason'] ?? '';
+            } else {
+              action = "ERROR";
+              reason = analysis.toString();
+            }
             
             finalOutput += "📁 ${item['file']} ➔ [$action]\n";
             if (reason.isNotEmpty) {

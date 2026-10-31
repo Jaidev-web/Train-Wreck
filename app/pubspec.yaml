@@ -37,6 +37,7 @@ dependencies:
   window_manager: ^0.5.2
   avatar_glow: ^3.0.1
   speech_to_text: ^7.5.0
+  http: ^1.6.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
