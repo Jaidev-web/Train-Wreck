@@ -9,8 +9,9 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
+    # Development only: replace with your Flutter app's real origin(s) before deploying
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -29,21 +30,24 @@ def scan_git_repo(request: RepoRequest):
         
     # 2. Ask Git for a list of modified files using subprocess
     try:
-        # This is the exact same as typing `git diff --name-only` in the terminal
+        # Same as `git diff --cached --name-only` in the terminal: files staged
+        # for the next commit (the same files the pre-commit hook scans).
         git_command = subprocess.run(
-            ["git", "diff", "--name-only"], 
-            cwd=repo_path, 
-            capture_output=True, 
+            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+            cwd=repo_path,
+            capture_output=True,
             text=True
         )
+        if git_command.returncode != 0:
+            return {"status": "error", "message": "Git is not initialized in this folder."}
         # Split the text output into a list of file names
-        changed_files = git_command.stdout.strip().split("\n")
+        changed_files = [f for f in git_command.stdout.splitlines() if f.strip()]
     except Exception as e:
         return {"status": "error", "message": "Git is not initialized in this folder."}
-        
-    # 3. If no files were changed, stop here
-    if changed_files == [""]:
-        return {"status": "safe", "message": "No uncommitted files to scan."}
+
+    # 3. If no files were staged, stop here
+    if not changed_files:
+        return {"status": "safe", "message": "No staged files to scan. Run `git add` first."}
 
     results = []
     
@@ -52,11 +56,17 @@ def scan_git_repo(request: RepoRequest):
         full_file_path = os.path.join(repo_path, file_name)
         
         # Only read it if it's an actual file (not deleted)
-        if os.path.exists(full_file_path):
-            with open(full_file_path, "r", encoding="utf-8") as file:
-                code_text = file.read()
-                
-            ai_response = ask_gemma(code_text)
+        if os.path.isfile(full_file_path):
+            try:
+                with open(full_file_path, "r", encoding="utf-8") as file:
+                    code_text = file.read()
+            except UnicodeDecodeError:
+                continue  # binary file (image, pdf, ...), skip it
+
+            try:
+                ai_response = ask_gemma(code_text)
+            except Exception as e:
+                ai_response = f"SCAN FAILED: {e}"
             
             # Save the AI's report for this specific file
             results.append({
