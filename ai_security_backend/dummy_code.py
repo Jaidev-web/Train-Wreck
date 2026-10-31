@@ -1,0 +1,1 @@
+password = "super_secret_admin_123"
