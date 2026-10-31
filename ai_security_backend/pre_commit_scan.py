@@ -54,23 +54,27 @@ def main():
         action = result["action"]
 
         if action == "block":
-            blocked.append((rel_path, result["reason"]))
+            blocked.append((rel_path, result["reason"], result.get("findings", [])))
 
         elif action == "redact":
             # Overwrite the file with the safe text and re-stage it
             (repo_root / rel_path).write_text(result["sanitized_text"], encoding="utf-8")
             git("add", rel_path)
-            redacted.append(rel_path)
+            redacted.append((rel_path, result.get("findings", [])))
 
     if redacted:
         print("[Git Plumber] Sensitive data was redacted and re-staged in:")
-        for f in redacted:
+        for f, findings in redacted:
             print(f"   - {f}")
+            for item in findings:
+                print(f"       line {item['line']}: {item['message']}")
 
     if blocked:
         print("\n[Git Plumber] COMMIT BLOCKED. Secrets found:")
-        for f, reason in blocked:
+        for f, reason, findings in blocked:
             print(f"   - {f}: {reason}")
+            for item in findings:
+                print(f"       line {item['line']} [{item['type']}]: {item['snippet']}")
         print("\nRemove the secrets (use environment variables) and commit again.")
         sys.exit(1)
 

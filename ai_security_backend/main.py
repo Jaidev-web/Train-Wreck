@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import subprocess
-from ai_model import ask_gemma
+from ai_director import analyze_text
 
 app = FastAPI()
 
@@ -64,19 +64,50 @@ def scan_git_repo(request: RepoRequest):
                 continue  # binary file (image, pdf, ...), skip it
 
             try:
-                ai_response = ask_gemma(code_text)
+                result = analyze_text(code_text)
+                action = result["action"]
+                findings = result["findings"]
+                reason = result["reason"]
             except Exception as e:
-                ai_response = f"SCAN FAILED: {e}"
-            
-            # Save the AI's report for this specific file
+                action, findings, reason = "error", [], f"SCAN FAILED: {e}"
+
+            # Save the report for this specific file
             results.append({
                 "file": file_name,
-                "ai_analysis": ai_response
+                "action": action,          # safe | redact | block | error
+                "reason": reason,
+                "findings": findings,      # [{line, type, severity, message, snippet, fix}]
+                "ai_analysis": _summary(action, reason, findings),
             })
-            
+
     # 5. Send the final report back to Flutter
+    actions = {r["action"] for r in results}
+    if "block" in actions:
+        overall = "block"
+    elif "error" in actions:
+        overall = "error"
+    elif "redact" in actions:
+        overall = "redact"
+    else:
+        overall = "safe"
+
     return {
-        "status": "scan_complete", 
+        "status": "scan_complete",
+        "overall_action": overall,
         "total_files_scanned": len(results),
+        "total_findings": sum(len(r["findings"]) for r in results),
         "report": results
     }
+
+
+def _summary(action, reason, findings):
+    """One readable sentence per file (kept for simple displays)."""
+    if action == "safe":
+        return "SAFE: No sensitive information found."
+    if action == "error":
+        return reason
+    lines = sorted({f["line"] for f in findings if f["line"]})
+    where = " on line(s) " + ", ".join(str(n) for n in lines) if lines else ""
+    if action == "block":
+        return "VULNERABILITY FOUND" + where + ". " + reason
+    return "SENSITIVE INFORMATION FOUND" + where + "."

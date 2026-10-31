@@ -62,7 +62,17 @@ sys.path.insert(0, str(PROJECT))
 import ai_director  # noqa: E402
 
 dummy = (PROJECT / "dummy_code.py").read_text(encoding="utf-8")
-check("Director blocks dummy_code.py (secrets)", ai_director.analyze_text(dummy)["action"] == "block")
+dres = ai_director.analyze_text(dummy)
+check("Director blocks dummy_code.py (secrets)", dres["action"] == "block")
+dummy_lines = dummy.splitlines()
+secret_lines = {f["line"] for f in dres["findings"] if f["severity"] == "high"}
+check("Findings point at the exact secret lines",
+      secret_lines == {n for n, t in enumerate(dummy_lines, 1) if "Demo" in t and ("assword" in t or "api_key" in t)}
+      | {n for n, t in enumerate(dummy_lines, 1) if "FakeDatabasePass" in t}, str(sorted(secret_lines)))
+check("Findings never expose the secret value",
+      not any("DemoPassword123" in f["snippet"] or "AIzaSy" in f["snippet"] for f in dres["findings"]))
+check("Findings have all popup fields",
+      all({"line", "type", "severity", "message", "snippet", "fix"} <= set(f) for f in dres["findings"]))
 
 r = ai_director.analyze_text("Contact 9876543210 or a@b.com\nprint('hi')\n")
 check("Director redacts phone + email locally",
@@ -126,6 +136,11 @@ try:
           json.dumps(body))
     check("API report has file + ai_analysis keys",
           all({"file", "ai_analysis"} <= set(x) for x in body.get("report", [])))
+    rep = {x["file"]: x for x in body.get("report", [])}
+    check("API returns line-level findings for Flutter popup",
+          body.get("overall_action") == "redact"
+          and rep.get("api_test.txt", {}).get("findings", [{}])[0].get("line") == 1
+          and rep["api_test.txt"]["findings"][0].get("type") == "phone", json.dumps(body))
 
     resp = client.post("/scan-repo", json={"repo_folder_path": "/no/such/folder"})
     check("API handles missing folder", resp.json().get("status") == "error")
