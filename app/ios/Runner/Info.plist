@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSSpeechRecognitionUsageDescription</key>
+<string>This app requires speech recognition to receive voice commands.</string>
+<key>NSMicrophoneUsageDescription</key>
+<string>This app requires microphone access to listen to voice commands.</string>
 </dict>
 </plist>
